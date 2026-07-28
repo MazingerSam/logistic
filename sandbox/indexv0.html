@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>戰略聯合物流併單管理系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS Excel 解析庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- FontAwesome 圖示庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Microsoft JhengHei', sans-serif; background-color: #f3f4f6; }
+        .drag-active { border-color: #3b82f6 !important; background-color: #eff6ff !important; }
+        .tab-active { border-bottom: 3px solid #1d4ed8; color: #1d4ed8; font-weight: bold; }
+        .table-container { max-height: 520px; overflow-y: auto; }
+        th { position: sticky; top: 0; background-color: #1e3a8a; color: white; z-index: 10; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- 頁頭標題欄 -->
+    <header class="max-w-7xl mx-auto mb-6 bg-white rounded-xl shadow-md p-6 flex flex-col md:flex-row justify-between items-center border-l-8 border-blue-900">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800"><i class="fa-solid fa-truck-fast text-blue-900 mr-3"></i>戰略聯合物流併單管理系統</h1>
+            <p class="text-sm text-gray-500 mt-1">支援雙軌定址預先併單、人工核勾併單、反併單與雙向單號追蹤匯出</p>
+        </div>
+        <div class="mt-4 md:mt-0 flex gap-3">
+            <button id="btnAutoMerge" onclick="runAutoConsolidation()" disabled class="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 disabled:bg-gray-300 text-white font-semibold rounded-lg shadow transition flex items-center gap-2">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> 執行系統預先併單
+            </button>
+            <button id="btnExport" onclick="exportToExcel()" disabled class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white font-semibold rounded-lg shadow transition flex items-center gap-2">
+                <i class="fa-solid fa-file-excel"></i> 匯出併單 Excel 報表
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto space-y-6">
+
+        <!-- 檔案拖曳與上傳區 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 大法上傳區 -->
+            <div id="dropDapha" class="bg-white border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
+                <input type="file" id="fileDapha" accept=".xls,.xlsx" class="hidden" onchange="handleFileSelect('dapha', event)">
+                <i class="fa-solid fa-cloud-arrow-up text-4xl text-blue-800 mb-2"></i>
+                <h3 class="font-bold text-gray-700 text-lg">大法 (Dapha) 訂單檔案</h3>
+                <p class="text-xs text-gray-400 mt-1">拖曳 .xls / .xlsx 檔案至此，或點擊選擇檔案</p>
+                <div id="statusDapha" class="mt-3 text-sm font-semibold text-gray-500">尚未載入檔案</div>
+            </div>
+
+            <!-- 拉法上傳區 -->
+            <div id="dropRapha" class="bg-white border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition cursor-pointer relative">
+                <input type="file" id="fileRapha" accept=".xls,.xlsx" class="hidden" onchange="handleFileSelect('rapha', event)">
+                <i class="fa-solid fa-cloud-arrow-up text-4xl text-indigo-700 mb-2"></i>
+                <h3 class="font-bold text-gray-700 text-lg">拉法 (Rapha) 訂單檔案</h3>
+                <p class="text-xs text-gray-400 mt-1">拖曳 .xls / .xlsx 檔案至此，或點擊選擇檔案</p>
+                <div id="statusRapha" class="mt-3 text-sm font-semibold text-gray-500">尚未載入檔案</div>
+            </div>
+        </div>
+
+        <!-- 人工操作工具列 -->
+        <div class="bg-white rounded-xl shadow p-4 flex flex-wrap gap-4 items-center justify-between border border-gray-200">
+            <div class="flex items-center gap-3">
+                <span class="font-bold text-gray-700 text-sm"><i class="fa-solid fa-sliders text-blue-700 mr-1"></i> 人工調整區：</span>
+                <button onclick="manualMergeSelected()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg shadow transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-object-group"></i> 將勾選項目併入指定大法單號
+                </button>
+                <button onclick="manualUnmergeSelected()" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-lg shadow transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-object-ungroup"></i> 反併單 (還原選取項目)
+                </button>
+            </div>
+            <div class="text-xs text-gray-500 flex gap-4">
+                <span><i class="fa-solid fa-circle text-blue-600"></i> 大法筆數: <b id="statDaphaCount">0</b></span>
+                <span><i class="fa-solid fa-circle text-indigo-600"></i> 拉法筆數: <b id="statRaphaCount">0</b></span>
+                <span><i class="fa-solid fa-circle text-amber-500"></i> 包裹總數: <b id="statMergedCount">0</b></span>
+            </div>
+        </div>
+
+        <!-- 頁籤與資料表格 -->
+        <div class="bg-white rounded-xl shadow overflow-hidden border border-gray-200">
+            <div class="flex border-b border-gray-200 bg-gray-50 text-sm font-medium">
+                <button id="tabBtnMergedDapha" onclick="switchTab('mergedDapha')" class="px-6 py-3 tab-active transition flex items-center gap-2">
+                    <i class="fa-solid fa-boxes-packing"></i> 大法合併訂單 (<span id="countMergedDapha">0</span>)
+                </button>
+                <button id="tabBtnMergedRapha" onclick="switchTab('mergedRapha')" class="px-6 py-3 text-gray-500 hover:text-gray-700 transition flex items-center gap-2">
+                    <i class="fa-solid fa-boxes-stacked"></i> 拉法合併訂單 (<span id="countMergedRapha">0</span>)
+                </button>
+                <button id="tabBtnOrigDapha" onclick="switchTab('origDapha')" class="px-6 py-3 text-gray-500 hover:text-gray-700 transition flex items-center gap-2">
+                    <i class="fa-solid fa-table-list"></i> 大法原始明細 (<span id="countOrigDapha">0</span>)
+                </button>
+                <button id="tabBtnOrigRapha" onclick="switchTab('origRapha')" class="px-6 py-3 text-gray-500 hover:text-gray-700 transition flex items-center gap-2">
+                    <i class="fa-solid fa-table-list"></i> 拉法原始明細 (<span id="countOrigRapha">0</span>)
+                </button>
+            </div>
+
+            <div class="table-container p-2">
+                <table id="dataTable" class="w-full text-sm text-left text-gray-600 border-collapse">
+                    <thead>
+                        <tr id="tableHeader">
+                            <th class="p-3 text-center"><input type="checkbox" onclick="toggleSelectAll(this)"></th>
+                            <th class="p-3">單據號碼</th>
+                            <th class="p-3">客戶全稱</th>
+                            <th class="p-3">聯絡電話</th>
+                            <th class="p-3">地址</th>
+                            <th class="p-3 text-center">來源公司</th>
+                            <th class="p-3 text-center">併單單號</th>
+                            <th class="p-3">備註</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="8" class="text-center py-12 text-gray-400">請先完成「大法」與「拉法」Excel 訂單檔案上傳</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- 腳本區域 -->
+    <script>
+        let daphaRaw = [];
+        let raphaRaw = [];
+        let currentTab = 'mergedDapha';
+
+        setupDragDrop('dropDapha', 'fileDapha', 'dapha');
+        setupDragDrop('dropRapha', 'fileRapha', 'rapha');
+
+        function setupDragDrop(dropId, inputId, company) {
+            const dropZone = document.getElementById(dropId);
+            const fileInput = document.getElementById(inputId);
+
+            dropZone.addEventListener('click', () => fileInput.click());
+            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
+            dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-active');
+                if (e.dataTransfer.files.length) {
+                    fileInput.files = e.dataTransfer.files;
+                    processFile(company, e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        function handleFileSelect(company, event) {
+            if (event.target.files.length) {
+                processFile(company, event.target.files[0]);
+            }
+        }
+
+        // 地址標準化清洗函數 (NFKC全半形統一 + 錯字『巿/市』校正)
+        function cleanAddress(addr) {
+            if (!addr) return '';
+            let str = String(addr).normalize('NFKC').replace(/巿/g, '市').replace(/臺/g, '台');
+            return str.replace(/\s+/g, '');
+        }
+
+        function processFile(company, file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(firstSheet, {defval: ''});
+
+                const processed = json.map((row, idx) => ({
+                    id: String(row['單據號碼'] || '').trim(),
+                    customer: String(row['(客戶全稱)'] || row['客戶全稱'] || '').trim(),
+                    customerCode: String(row['客戶編號'] || '').trim(),
+                    phone: String(row['聯絡電話'] || '').trim(),
+                    address: String(row['地址'] || '').trim(),
+                    addressClean: cleanAddress(row['地址']),
+                    invoice: String(row['發票號碼'] || '').trim(),
+                    note: String(row['備註'] || '').trim(),
+                    title: String(row['聯絡職稱'] || '').trim(),
+                    company: company === 'dapha' ? '大法' : '拉法',
+                    excelRow: idx + 2,
+                    masterId: String(row['單據號碼'] || '').trim(),
+                    targetPool: company
+                }));
+
+                if (company === 'dapha') {
+                    daphaRaw = processed;
+                    document.getElementById('statusDapha').innerHTML = `<span class="text-emerald-600"><i class="fa-solid fa-circle-check"></i> 已載入 ${processed.length} 筆資料 (${file.name})</span>`;
+                } else {
+                    raphaRaw = processed;
+                    document.getElementById('statusRapha').innerHTML = `<span class="text-emerald-600"><i class="fa-solid fa-circle-check"></i> 已載入 ${processed.length} 筆資料 (${file.name})</span>`;
+                }
+
+                checkReady();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function checkReady() {
+            if (daphaRaw.length > 0 && raphaRaw.length > 0) {
+                document.getElementById('btnAutoMerge').disabled = false;
+                document.getElementById('btnExport').disabled = false;
+                runAutoConsolidation();
+            }
+            updateStats();
+        }
+
+        // 預先併單 (雙軌比對 + 大法優先)
+        function runAutoConsolidation() {
+            daphaRaw.forEach(r => { r.masterId = r.id; });
+            raphaRaw.forEach(r => { r.masterId = r.id; });
+
+            const daphaAddressSet = new Set(daphaRaw.map(r => r.addressClean));
+            const daphaPrefixSet = new Set(daphaRaw.map(r => r.customer.substring(0, 2)).filter(p => p));
+            const daphaPrefixToAddr = {};
+            daphaRaw.forEach(r => {
+                const prefix = r.customer.substring(0, 2);
+                if (prefix && !daphaPrefixToAddr[prefix]) daphaPrefixToAddr[prefix] = r.addressClean;
+            });
+
+            raphaRaw.forEach(r => {
+                const hasQ = r.note.toUpperCase().includes('Q');
+                if (hasQ) {
+                    if (daphaAddressSet.has(r.addressClean)) {
+                        r.targetPool = 'dapha';
+                    } else if (daphaPrefixSet.has(r.customer.substring(0, 2))) {
+                        r.targetPool = 'dapha';
+                        r.addressClean = daphaPrefixToAddr[r.customer.substring(0, 2)];
+                    } else {
+                        r.targetPool = 'rapha';
+                    }
+                } else {
+                    r.targetPool = 'rapha';
+                }
+            });
+
+            // 計算大法池主單號
+            const daphaPool = [...daphaRaw, ...raphaRaw.filter(r => r.targetPool === 'dapha')];
+            const daphaAddrGroup = {};
+            daphaPool.forEach(r => {
+                if (!daphaAddrGroup[r.addressClean]) daphaAddrGroup[r.addressClean] = [];
+                daphaAddrGroup[r.addressClean].push(r);
+            });
+
+            Object.keys(daphaAddrGroup).forEach(addr => {
+                const group = daphaAddrGroup[addr];
+                const daphaOrders = group.filter(r => r.company === '大法');
+                let leadId = daphaOrders.length > 0 ? daphaOrders.map(r => r.id).sort()[0] : group.map(r => r.id).sort()[0];
+                group.forEach(r => { r.masterId = leadId; });
+            });
+
+            // 計算拉法池主單號
+            const raphaPool = raphaRaw.filter(r => r.targetPool === 'rapha');
+            const raphaAddrGroup = {};
+            raphaPool.forEach(r => {
+                if (!raphaAddrGroup[r.addressClean]) raphaAddrGroup[r.addressClean] = [];
+                raphaAddrGroup[r.addressClean].push(r);
+            });
+            Object.keys(raphaAddrGroup).forEach(addr => {
+                const group = raphaAddrGroup[addr];
+                const leadId = group.map(r => r.id).sort()[0];
+                group.forEach(r => { r.masterId = leadId; });
+            });
+
+            updateStats();
+            renderTable();
+        }
+
+        // 人工併單
+        function manualMergeSelected() {
+            const selected = getSelectedItems();
+            if (selected.length === 0) {
+                alert('請先勾選欲合併的訂單項目！');
+                return;
+            }
+            const targetMasterId = prompt('請輸入要合併進去的大法併單單號 (主單號)：');
+            if (!targetMasterId) return;
+
+            selected.forEach(item => {
+                item.masterId = targetMasterId.trim();
+                if (item.company === '拉法') item.targetPool = 'dapha';
+            });
+
+            updateStats();
+            renderTable();
+        }
+
+        // 反併單 (解除併單)
+        function manualUnmergeSelected() {
+            const selected = getSelectedItems();
+            if (selected.length === 0) {
+                alert('請先勾選要解除合併 (反併單) 的訂單！');
+                return;
+            }
+            selected.forEach(item => {
+                item.masterId = item.id;
+                if (item.company === '拉法') item.targetPool = 'rapha';
+            });
+
+            updateStats();
+            renderTable();
+        }
+
+        function getSelectedItems() {
+            const checkboxes = document.querySelectorAll('.item-checkbox:checked');
+            const selected = [];
+            checkboxes.forEach(cb => {
+                const comp = cb.dataset.company;
+                const id = cb.dataset.id;
+                const pool = comp === '大法' ? daphaRaw : raphaRaw;
+                const found = pool.find(r => r.id === id);
+                if (found) selected.push(found);
+            });
+            return selected;
+        }
+
+        function toggleSelectAll(master) {
+            const checkboxes = document.querySelectorAll('.item-checkbox');
+            checkboxes.forEach(cb => cb.checked = master.checked);
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            ['MergedDapha', 'MergedRapha', 'OrigDapha', 'OrigRapha'].forEach(t => {
+                document.getElementById('tabBtn' + t).className = 'px-6 py-3 text-gray-500 hover:text-gray-700 transition flex items-center gap-2';
+            });
+            document.getElementById('tabBtn' + tab.charAt(0).toUpperCase() + tab.slice(1)).className = 'px-6 py-3 tab-active transition flex items-center gap-2';
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            let dataToRender = [];
+            if (currentTab === 'mergedDapha') dataToRender = [...daphaRaw, ...raphaRaw.filter(r => r.targetPool === 'dapha')];
+            else if (currentTab === 'mergedRapha') dataToRender = raphaRaw.filter(r => r.targetPool === 'rapha');
+            else if (currentTab === 'origDapha') dataToRender = daphaRaw;
+            else if (currentTab === 'origRapha') dataToRender = raphaRaw;
+
+            if (dataToRender.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-gray-400">目前頁籤無資料</td></tr>`;
+                return;
+            }
+
+            dataToRender.sort((a, b) => a.addressClean.localeCompare(b.addressClean));
+
+            dataToRender.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-blue-50 transition border-b border-gray-100';
+
+                const isMasterSame = row.masterId === row.id;
+                const masterDisplay = isMasterSame ? '<span class="text-gray-300">-</span>' : `<span class="font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded">${row.masterId}</span>`;
+
+                tr.innerHTML = `
+                    <td class="p-3 text-center"><input type="checkbox" class="item-checkbox" data-company="${row.company}" data-id="${row.id}"></td>
+                    <td class="p-3 font-mono text-gray-800">${row.id}</td>
+                    <td class="p-3 font-medium text-gray-900">${row.customer}</td>
+                    <td class="p-3 text-gray-500">${row.phone || '-'}</td>
+                    <td class="p-3 text-gray-700">${row.address}</td>
+                    <td class="p-3 text-center">${row.company === '大法' ? '<span class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">大法</span>' : '<span class="bg-indigo-600 text-white text-xs px-2 py-0.5 rounded-full">拉法</span>'}</td>
+                    <td class="p-3 text-center">${masterDisplay}</td>
+                    <td class="p-3 text-xs text-gray-500">${row.note || '-'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateStats() {
+            document.getElementById('statDaphaCount').innerText = daphaRaw.length;
+            document.getElementById('statRaphaCount').innerText = raphaRaw.length;
+            const allData = [...daphaRaw, ...raphaRaw];
+            const uniqueMasters = new Set(allData.map(r => r.masterId).filter(m => m));
+            document.getElementById('statMergedCount').innerText = uniqueMasters.size;
+
+            document.getElementById('countOrigDapha').innerText = daphaRaw.length;
+            document.getElementById('countOrigRapha').innerText = raphaRaw.length;
+            document.getElementById('countMergedDapha').innerText = daphaRaw.length + raphaRaw.filter(r => r.targetPool === 'dapha').length;
+            document.getElementById('countMergedRapha').innerText = raphaRaw.filter(r => r.targetPool === 'rapha').length;
+        }
+
+        // 匯出 Excel (含 4 頁籤)
+        function exportToExcel() {
+            const wb = XLSX.utils.book_new();
+
+            // 1. 大法合併訂單
+            const mergedDaphaData = [...daphaRaw, ...raphaRaw.filter(r => r.targetPool === 'dapha')].map(r => ({
+                '併單單號': r.masterId,
+                '(客戶全稱)': r.customer,
+                '聯絡電話': r.phone,
+                '地址': r.address,
+                '來源公司': r.company,
+                '原始單據號碼': r.id,
+                '發票號碼': r.invoice,
+                '備註': r.note
+            }));
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mergedDaphaData), "大法合併訂單");
+
+            // 2. 拉法合併訂單
+            const mergedRaphaData = raphaRaw.filter(r => r.targetPool === 'rapha').map(r => ({
+                '併單單號': r.masterId,
+                '(客戶全稱)': r.customer,
+                '聯絡電話': r.phone,
+                '地址': r.address,
+                '來源公司': r.company,
+                '原始單據號碼': r.id,
+                '發票號碼': r.invoice,
+                '備註': r.note
+            }));
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mergedRaphaData), "拉法合併訂單");
+
+            // 3. 大法原始資料
+            const origDaphaData = daphaRaw.map(r => ({
+                '單據號碼': r.id,
+                '(客戶全稱)': r.customer,
+                '客戶編號': r.customerCode,
+                '聯絡電話': r.phone,
+                '地址': r.address,
+                '發票號碼': r.invoice,
+                '備註': r.note,
+                '聯絡職稱': r.title,
+                '併單單號': r.masterId === r.id ? '' : r.masterId
+            }));
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(origDaphaData), "大法原始資料");
+
+            // 4. 拉法原始資料
+            const origRaphaData = raphaRaw.map(r => ({
+                '單據號碼': r.id,
+                '(客戶全稱)': r.customer,
+                '客戶編號': r.customerCode,
+                '聯絡電話': r.phone,
+                '地址': r.address,
+                '發票號碼': r.invoice,
+                '備註': r.note,
+                '聯絡職稱': r.title,
+                '併單單號': r.masterId === r.id ? '' : r.masterId
+            }));
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(origRaphaData), "拉法原始資料");
+
+            XLSX.writeFile(wb, "大法_拉法_戰略聯合物流併單報表(網頁版產出).xlsx");
+        }
+    </script>
+</body>
+</html>
