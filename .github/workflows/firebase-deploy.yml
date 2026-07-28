@@ -3,7 +3,7 @@ name: Deploy to Firebase Hosting
 on:
   push:
     branches:
-      - main # Change this to 'master' if your default branch is master
+      - main
 
 jobs:
   build_and_deploy:
@@ -12,8 +12,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # (Optional) If you use Node.js frameworks like React, Vue, Vite, etc., 
-      # uncomment the block below to install dependencies and build your project.
+      # (Optional) Uncomment if using a framework like React, Vite, etc.
       # - name: Set up Node.js
       #   uses: actions/setup-node@v4
       #   with:
@@ -23,11 +22,7 @@ jobs:
       #     npm ci
       #     npm run build
 
-      - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-         ## firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }} # Leave this if using FIREBASE_TOKEN below, or use service account setup
-          channelId: live
+      - name: Deploy to Firebase
+        run: npx firebase-tools deploy --only hosting
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
