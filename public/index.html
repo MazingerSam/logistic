@@ -34,8 +34,8 @@
         <div class="mb-4 md:mb-0">
             <h1 class="text-2xl font-bold text-gray-800 flex items-center">
                 <i class="fa-solid fa-shield-halved text-blue-900 mr-3"></i>
-                大法聯合物流併單管理系統 
-                <span class="text-xs bg-emerald-100 text-emerald-800 font-normal px-2.5 py-1 rounded-full ml-3">完全隔離修復版</span>
+                戰略聯合物流併單管理系統 
+                <span class="text-xs bg-emerald-100 text-emerald-800 font-normal px-2.5 py-1 rounded-full ml-3">電話欄位優化版</span>
             </h1>
             <p class="text-sm text-gray-500 mt-1">支援雙軌定址併單、跨公司同單號精確隔離、大法內部自併、雙欄對照與 QA/QC 稽核</p>
         </div>
@@ -273,7 +273,7 @@
                 const json = XLSX.utils.sheet_to_json(firstSheet, {defval: ''});
 
                 const processed = json.map((row, idx) => ({
-                    uid: `${company}_${idx}`, // 唯一識別 ID (如: dapha_0, rapha_0)
+                    uid: `${company}_${idx}`,
                     id: String(row['單據號碼'] || '').trim(),
                     customer: String(row['(客戶全稱)'] || row['客戶全稱'] || '').trim(),
                     customerCode: String(row['客戶編號'] || '').trim(),
@@ -390,7 +390,7 @@
             renderCompareList('rapha');
         }
 
-        // 🌟【終極修復】：精準抓取勾選物件 (使用內含之每筆單據 UID 列表，絕不混淆跨公司同單號)
+        // 精準抓取勾選物件
         function getSelectedObjects() {
             const checkboxes = document.querySelectorAll('.item-checkbox:checked');
             const selectedObjects = [];
@@ -401,14 +401,12 @@
                 const singleUid = cb.dataset.uid;
 
                 if (uidsString) {
-                    // 合併結果頁：Checkbox 上會綁定屬於該卡片/列的所有原始 UIDs (以逗號分隔)
                     const uids = uidsString.split(',');
                     uids.forEach(u => {
                         const item = allItems.find(r => r.uid === u);
                         if (item && !selectedObjects.includes(item)) selectedObjects.push(item);
                     });
                 } else if (singleUid) {
-                    // 原始明細頁：直接抓取對應的唯一 UID
                     const found = allItems.find(r => r.uid === singleUid);
                     if (found && !selectedObjects.includes(found)) selectedObjects.push(found);
                 }
@@ -493,7 +491,6 @@
             renderModalOptions(document.getElementById('modalSearch').value);
         }
 
-        // 🌟【手動併單確認】：僅更改被點選的精確 UID 物件
         function confirmManualMerge() {
             if (!selectedTargetMasterId) { alert('請點選一個大法併單單號！'); return; }
 
@@ -501,8 +498,8 @@
 
             currentlySelectedObjects.forEach(item => {
                 item.masterId = targetMaster;  
-                item.isManual = true;          // 鎖定保護
-                item.targetPool = 'dapha';     // 劃入大法池
+                item.isManual = true;          
+                item.targetPool = 'dapha';     
             });
 
             closeMergeModal();
@@ -681,7 +678,7 @@
             }
         }
 
-        // 🌟【分組與 UID 收集】：每個合併組會收集內部所有物件的唯一 UID
+        // 🌟【分組與電話收集】：收集內部項目之唯一 Phone/Invoices/Notes/UIDs
         function getConsolidatedLogisticsGroups(poolData) {
             const groups = {};
             poolData.forEach(r => {
@@ -698,17 +695,19 @@
                 const sourceIdsList = items.map(i => `${i.id} (${i.company})`).join('\n');
                 const invoicesList = items.map(i => i.invoice).filter(inv => inv).join('\n');
                 const notesList = items.map(i => i.note).filter(n => n).join('\n');
+                const phonesList = Array.from(new Set(items.map(i => i.phone).filter(p => p))).join('\n');
                 const uidsList = items.map(i => i.uid).join(',');
 
                 result.push({
                     masterId: mId,
                     customer: leadItem.customer,
+                    phone: phonesList || leadItem.phone || '-', // 聯絡電話
                     address: leadItem.address,
                     count: items.length,
                     sourceDetails: sourceIdsList,
                     invoices: invoicesList,
                     notes: notesList,
-                    uids: uidsList // 攜帶包含的所有 UIDs
+                    uids: uidsList
                 });
             });
 
@@ -781,7 +780,6 @@
                     const tr = document.createElement('tr');
                     tr.className = 'hover:bg-blue-50 transition border-b border-gray-200';
 
-                    // 🌟 Checkbox 精確綁定 data-uids
                     tr.innerHTML = `
                         <td class="p-3 text-center"><input type="checkbox" class="item-checkbox" data-uids="${g.uids}"></td>
                         <td class="p-3 font-mono font-bold text-blue-900 bg-blue-50">${g.masterId}</td>
@@ -842,7 +840,6 @@
                         ? `<span class="text-xs bg-amber-600 text-white font-bold px-2.5 py-1 rounded-full shadow-sm inline-flex items-center"><i class="fa-solid fa-link text-[10px] mr-1"></i>併入 ${cleanMasterId}</span>`
                         : `<span class="text-xs text-gray-300">- 獨立單據 -</span>`;
 
-                    // 🌟 原始明細頁：精確綁定 data-uid
                     tr.innerHTML = `
                         <td class="p-3 text-center"><input type="checkbox" class="item-checkbox" data-uid="${row.uid}"></td>
                         <td class="p-3 font-mono font-bold text-gray-800">${row.id}</td>
@@ -964,7 +961,6 @@
             }
         }
 
-        // 🌟【雙欄對照直連併單】：透過精確UID與所屬卡片進行併單
         function executeDirectCompareMerge() {
             if (!selectedCompareDaphaMasterId || !selectedCompareRaphaMasterId) {
                 alert('請先在左欄點選目標大法包裹，並在右欄點選待併入的包裹！');
@@ -972,7 +968,6 @@
             }
 
             const allItems = [...daphaRaw, ...raphaRaw];
-            // 抓出右欄所選包裹對應的「拉法池/待併池」相同 masterId 的原始物件
             const itemsToMerge = allItems.filter(r => 
                 String(r.masterId).trim() === String(selectedCompareRaphaMasterId).trim() &&
                 r.targetPool === 'rapha'
@@ -998,15 +993,18 @@
             renderCompareList('rapha');
         }
 
+        // 🌟 核心：Excel 匯出（在「客戶全稱」與「地址」之間新增「聯絡電話」欄位）
         function exportToExcel() {
             const wb = XLSX.utils.book_new();
 
             const daphaPool = [...daphaRaw, ...raphaRaw.filter(r => r.targetPool === 'dapha')];
             const daphaLogisticsGroups = getConsolidatedLogisticsGroups(daphaPool);
             
+            // 💡 併單表格匯出格式：增設 聯絡電話
             const mergedDaphaData = daphaLogisticsGroups.map(g => ({
                 '併單單號': g.masterId,
                 '客戶全稱': g.customer,
+                '聯絡電話': g.phone, // 👈 新增於 客戶全稱 與 地址 中間
                 '地址': g.address,
                 '合併單據數量': g.count,
                 '來源單號(單號/公司)': g.sourceDetails,
@@ -1014,7 +1012,7 @@
                 '備註': g.notes
             }));
             const wsMergedDapha = XLSX.utils.json_to_sheet(mergedDaphaData);
-            wsMergedDapha['!cols'] = [{wch: 16}, {wch: 24}, {wch: 32}, {wch: 14}, {wch: 24}, {wch: 20}, {wch: 24}];
+            wsMergedDapha['!cols'] = [{wch: 16}, {wch: 24}, {wch: 16}, {wch: 32}, {wch: 14}, {wch: 24}, {wch: 20}, {wch: 24}];
             XLSX.utils.book_append_sheet(wb, wsMergedDapha, "大法合併訂單");
 
             const raphaPool = raphaRaw.filter(r => r.targetPool === 'rapha');
@@ -1023,6 +1021,7 @@
             const mergedRaphaData = raphaLogisticsGroups.map(g => ({
                 '併單單號': g.masterId,
                 '客戶全稱': g.customer,
+                '聯絡電話': g.phone, // 👈 新增於 客戶全稱 與 地址 中間
                 '地址': g.address,
                 '合併單據數量': g.count,
                 '來源單號(單號/公司)': g.sourceDetails,
@@ -1030,7 +1029,7 @@
                 '備註': g.notes
             }));
             const wsMergedRapha = XLSX.utils.json_to_sheet(mergedRaphaData);
-            wsMergedRapha['!cols'] = [{wch: 16}, {wch: 24}, {wch: 32}, {wch: 14}, {wch: 24}, {wch: 20}, {wch: 24}];
+            wsMergedRapha['!cols'] = [{wch: 16}, {wch: 24}, {wch: 16}, {wch: 32}, {wch: 14}, {wch: 24}, {wch: 20}, {wch: 24}];
             XLSX.utils.book_append_sheet(wb, wsMergedRapha, "拉法合併訂單");
 
             const origDaphaData = daphaRaw.map(r => {
